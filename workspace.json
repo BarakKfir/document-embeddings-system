@@ -1,0 +1,27 @@
+
+{
+  "version": 1,
+  "projects": {
+    "sync-api": {
+      "root": "apis/sync_management",
+      "sourceRoot": "apis/sync_management",
+      "projectType": "application",
+      "targets": {
+        "build": {
+          "executor": "@nrwl/node:build",
+          "outputs": ["dist/apis/sync_management"]
+        }
+      }
+    },
+    "index-api": {
+      "root": "apis/index_management",
+      "sourceRoot": "apis/index_management",
+      "projectType": "application"
+    },
+    "ui": {
+      "root": "ui",
+      "sourceRoot": "ui/src",
+      "projectType": "application"
+    }
+  }
+}
