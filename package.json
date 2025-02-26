@@ -1,3 +1,4 @@
+
 {
   "name": "workspace",
   "version": "1.0.0",
@@ -7,7 +8,10 @@
     "doc": "docs"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "webpack --mode production",
+    "start": "node ui/server.js",
+    "dev": "webpack serve --mode development --port 3000"
   },
   "keywords": [],
   "author": "",
