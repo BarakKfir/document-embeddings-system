@@ -40,7 +40,14 @@ s3_client = boto3.client('s3',
 )
 
 # K8s client setup for job management
-config.load_incluster_config()
+try:
+    config.load_kube_config()
+except:
+    # Fallback to default configuration for development
+    configuration = client.Configuration()
+    configuration.host = os.environ.get('KUBERNETES_HOST', 'http://localhost:8080')
+    configuration.verify_ssl = False
+    client.Configuration.set_default(configuration)
 batch_v1 = client.BatchV1Api()
 
 # Endpoints for UI
