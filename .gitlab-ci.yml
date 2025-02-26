@@ -1,0 +1,280 @@
+# .gitlab-ci.yml for Document Embeddings & Indexing System
+
+stages:
+  - test
+  - build
+  - deploy_staging
+  - deploy_production
+
+variables:
+  DOCKER_REGISTRY: "registry.example.com"
+  STG_K8S_CLUSTER: "stg-eks-cluster"
+  PROD_K8S_CLUSTER: "prod-eks-cluster"
+  NAMESPACE: "document-sync"
+
+# Cache dependencies between jobs
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .pip-cache/
+    - node_modules/
+
+# Common testing template
+.test_template: &test_definition
+  stage: test
+  image: python:3.9-slim
+  before_script:
+    - pip install -r requirements.txt --cache-dir=.pip-cache
+    - pip install pytest pytest-cov flake8 mypy --cache-dir=.pip-cache
+
+# Common Docker build template
+.build_template: &build_definition
+  stage: build
+  image: docker:20.10.16
+  services:
+    - docker:20.10.16-dind
+  before_script:
+    - docker login -u $DOCKER_REGISTRY_USER -p $DOCKER_REGISTRY_PASSWORD $DOCKER_REGISTRY
+
+# Common deployment template
+.deploy_template: &deploy_definition
+  image: 
+    name: bitnami/kubectl:latest
+    entrypoint: [""]
+  before_script:
+    - kubectl config use-context $K8S_CLUSTER
+
+# Test API services
+test:apis:
+  <<: *test_definition
+  script:
+    - cd apis
+    - flake8 .
+    - mypy .
+    - pytest --cov=. --cov-report=xml
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: apis/coverage.xml
+
+# Test jobs
+test:jobs:
+  <<: *test_definition
+  script:
+    - cd jobs
+    - flake8 .
+    - mypy .
+    - pytest --cov=. --cov-report=xml
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: jobs/coverage.xml
+
+# Test UI
+test:ui:
+  stage: test
+  image: node:16-alpine
+  before_script:
+    - cd ui
+    - npm ci
+  script:
+    - npm run lint
+    - npm run test
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: ui/coverage/cobertura-coverage.xml
+
+# Build sync management API image
+build:sync_mgmt_api:
+  <<: *build_definition
+  script:
+    - cd apis/sync_management
+    - docker build -t $DOCKER_REGISTRY/sync-management-api:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/sync-management-api:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/sync-management-api:latest
+    - docker push $DOCKER_REGISTRY/sync-management-api:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/sync-management-api:latest
+
+# Build index management API image
+build:index_mgmt_api:
+  <<: *build_definition
+  script:
+    - cd apis/index_management
+    - docker build -t $DOCKER_REGISTRY/index-management-api:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/index-management-api:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/index-management-api:latest
+    - docker push $DOCKER_REGISTRY/index-management-api:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/index-management-api:latest
+
+# Build UI image
+build:ui:
+  <<: *build_definition
+  script:
+    - cd ui
+    - docker build -t $DOCKER_REGISTRY/document-sync-ui:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/document-sync-ui:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/document-sync-ui:latest
+    - docker push $DOCKER_REGISTRY/document-sync-ui:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/document-sync-ui:latest
+
+# Build source sync job image
+build:source_sync:
+  <<: *build_definition
+  script:
+    - cd jobs/source_sync
+    - docker build -t $DOCKER_REGISTRY/source-sync:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/source-sync:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/source-sync:latest
+    - docker push $DOCKER_REGISTRY/source-sync:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/source-sync:latest
+
+# Build doc sanitizer job image
+build:doc_sanitizer:
+  <<: *build_definition
+  script:
+    - cd jobs/doc_sanitizer
+    - docker build -t $DOCKER_REGISTRY/doc-sanitizer:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/doc-sanitizer:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/doc-sanitizer:latest
+    - docker push $DOCKER_REGISTRY/doc-sanitizer:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/doc-sanitizer:latest
+
+# Build docs embeddings job image
+build:docs_embeddings:
+  <<: *build_definition
+  script:
+    - cd jobs/docs_embeddings
+    - docker build -t $DOCKER_REGISTRY/docs-embeddings:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/docs-embeddings:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/docs-embeddings:latest
+    - docker push $DOCKER_REGISTRY/docs-embeddings:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/docs-embeddings:latest
+
+# Build index collector job image
+build:index_collector:
+  <<: *build_definition
+  script:
+    - cd jobs/index_collector
+    - docker build -t $DOCKER_REGISTRY/index-collector:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/index-collector:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/index-collector:latest
+    - docker push $DOCKER_REGISTRY/index-collector:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/index-collector:latest
+
+# Build sync watcher job image
+build:sync_watcher:
+  <<: *build_definition
+  script:
+    - cd jobs/sync_watcher
+    - docker build -t $DOCKER_REGISTRY/sync-watcher:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/sync-watcher:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/sync-watcher:latest
+    - docker push $DOCKER_REGISTRY/sync-watcher:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/sync-watcher:latest
+
+# Build index creator job image
+build:index_creator:
+  <<: *build_definition
+  script:
+    - cd jobs/index_creator
+    - docker build -t $DOCKER_REGISTRY/index-creator:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/index-creator:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/index-creator:latest
+    - docker push $DOCKER_REGISTRY/index-creator:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/index-creator:latest
+
+# Build index cleanup job image
+build:index_cleanup:
+  <<: *build_definition
+  script:
+    - cd jobs/index_cleanup
+    - docker build -t $DOCKER_REGISTRY/index-cleanup:$CI_COMMIT_SHORT_SHA .
+    - docker tag $DOCKER_REGISTRY/index-cleanup:$CI_COMMIT_SHORT_SHA $DOCKER_REGISTRY/index-cleanup:latest
+    - docker push $DOCKER_REGISTRY/index-cleanup:$CI_COMMIT_SHORT_SHA
+    - docker push $DOCKER_REGISTRY/index-cleanup:latest
+
+# Deploy to staging
+deploy:staging:
+  <<: *deploy_definition
+  stage: deploy_staging
+  variables:
+    K8S_CLUSTER: $STG_K8S_CLUSTER
+  script:
+    # Update deployment manifests with new image tags
+    - sed -i "s|image:.*sync-management-api:.*|image: $DOCKER_REGISTRY/sync-management-api:$CI_COMMIT_SHORT_SHA|g" k8s/staging/deployment-sync-api.yaml
+    - sed -i "s|image:.*index-management-api:.*|image: $DOCKER_REGISTRY/index-management-api:$CI_COMMIT_SHORT_SHA|g" k8s/staging/deployment-index-api.yaml
+    - sed -i "s|image:.*document-sync-ui:.*|image: $DOCKER_REGISTRY/document-sync-ui:$CI_COMMIT_SHORT_SHA|g" k8s/staging/deployment-ui.yaml
+    
+    # Update job image tags in ConfigMaps
+    - sed -i "s|source-sync:.*|source-sync:$CI_COMMIT_SHORT_SHA|g" k8s/staging/configmap-job-images.yaml
+    - sed -i "s|doc-sanitizer:.*|doc-sanitizer:$CI_COMMIT_SHORT_SHA|g" k8s/staging/configmap-job-images.yaml
+    - sed -i "s|docs-embeddings:.*|docs-embeddings:$CI_COMMIT_SHORT_SHA|g" k8s/staging/configmap-job-images.yaml
+    - sed -i "s|index-collector:.*|index-collector:$CI_COMMIT_SHORT_SHA|g" k8s/staging/configmap-job-images.yaml
+    - sed -i "s|sync-watcher:.*|sync-watcher:$CI_COMMIT_SHORT_SHA|g" k8s/staging/configmap-job-images.yaml
+    - sed -i "s|index-creator:.*|index-creator:$CI_COMMIT_SHORT_SHA|g" k8s/staging/configmap-job-images.yaml
+    - sed -i "s|index-cleanup:.*|index-cleanup:$CI_COMMIT_SHORT_SHA|g" k8s/staging/configmap-job-images.yaml
+    
+    # Apply Kubernetes configurations
+    - kubectl apply -f k8s/staging/namespace.yaml
+    - kubectl apply -f k8s/staging/configmap-job-images.yaml
+    - kubectl apply -f k8s/staging/configmap-env.yaml
+    - kubectl apply -f k8s/staging/secrets.yaml
+    - kubectl apply -f k8s/staging/deployment-sync-api.yaml
+    - kubectl apply -f k8s/staging/deployment-index-api.yaml
+    - kubectl apply -f k8s/staging/deployment-ui.yaml
+    - kubectl apply -f k8s/staging/service-sync-api.yaml
+    - kubectl apply -f k8s/staging/service-index-api.yaml
+    - kubectl apply -f k8s/staging/service-ui.yaml
+    - kubectl apply -f k8s/staging/ingress.yaml
+    - kubectl apply -f k8s/staging/cronjobs.yaml
+    
+    # Wait for deployments to be ready
+    - kubectl rollout status deployment/sync-management-api -n $NAMESPACE
+    - kubectl rollout status deployment/index-management-api -n $NAMESPACE
+    - kubectl rollout status deployment/document-sync-ui -n $NAMESPACE
+  only:
+    - main
+  environment:
+    name: staging
+    url: https://doc-sync.staging.example.com
+
+# Deploy to production
+deploy:production:
+  <<: *deploy_definition
+  stage: deploy_production
+  variables:
+    K8S_CLUSTER: $PROD_K8S_CLUSTER
+  script:
+    # Update deployment manifests with new image tags
+    - sed -i "s|image:.*sync-management-api:.*|image: $DOCKER_REGISTRY/sync-management-api:$CI_COMMIT_SHORT_SHA|g" k8s/production/deployment-sync-api.yaml
+    - sed -i "s|image:.*index-management-api:.*|image: $DOCKER_REGISTRY/index-management-api:$CI_COMMIT_SHORT_SHA|g" k8s/production/deployment-index-api.yaml
+    - sed -i "s|image:.*document-sync-ui:.*|image: $DOCKER_REGISTRY/document-sync-ui:$CI_COMMIT_SHORT_SHA|g" k8s/production/deployment-ui.yaml
+    
+    # Update job image tags in ConfigMaps
+    - sed -i "s|source-sync:.*|source-sync:$CI_COMMIT_SHORT_SHA|g" k8s/production/configmap-job-images.yaml
+    - sed -i "s|doc-sanitizer:.*|doc-sanitizer:$CI_COMMIT_SHORT_SHA|g" k8s/production/configmap-job-images.yaml
+    - sed -i "s|docs-embeddings:.*|docs-embeddings:$CI_COMMIT_SHORT_SHA|g" k8s/production/configmap-job-images.yaml
+    - sed -i "s|index-collector:.*|index-collector:$CI_COMMIT_SHORT_SHA|g" k8s/production/configmap-job-images.yaml
+    - sed -i "s|sync-watcher:.*|sync-watcher:$CI_COMMIT_SHORT_SHA|g" k8s/production/configmap-job-images.yaml
+    - sed -i "s|index-creator:.*|index-creator:$CI_COMMIT_SHORT_SHA|g" k8s/production/configmap-job-images.yaml
+    - sed -i "s|index-cleanup:.*|index-cleanup:$CI_COMMIT_SHORT_SHA|g" k8s/production/configmap-job-images.yaml
+    
+    # Apply Kubernetes configurations
+    - kubectl apply -f k8s/production/namespace.yaml
+    - kubectl apply -f k8s/production/configmap-job-images.yaml
+    - kubectl apply -f k8s/production/configmap-env.yaml
+    - kubectl apply -f k8s/production/secrets.yaml
+    - kubectl apply -f k8s/production/deployment-sync-api.yaml
+    - kubectl apply -f k8s/production/deployment-index-api.yaml
+    - kubectl apply -f k8s/production/deployment-ui.yaml
+    - kubectl apply -f k8s/production/service-sync-api.yaml
+    - kubectl apply -f k8s/production/service-index-api.yaml
+    - kubectl apply -f k8s/production/service-ui.yaml
+    - kubectl apply -f k8s/production/ingress.yaml
+    - kubectl apply -f k8s/production/cronjobs.yaml
+    
+    # Wait for deployments to be ready
+    - kubectl rollout status deployment/sync-management-api -n $NAMESPACE
+    - kubectl rollout status deployment/index-management-api -n $NAMESPACE
+    - kubectl rollout status deployment/document-sync-ui -n $NAMESPACE
+  only:
+    - main
+  when: manual
+  environment:
+    name: production
+    url: https://doc-sync.example.com

@@ -1,0 +1,119 @@
+flowchart TD
+    %% Document Sources
+    subgraph Sources["Document Sources"]
+        mitre["MITRE\nEnterprise Attack JSON"]
+        admin["Admin Guides\nDocumentation Sitemap"]
+        sk["Secure Knowledge\nSK Articles"]
+        cpr["CPR Research Blogs\nWP API"]
+        jira["Jira Task Manager\nTickets"]
+    end
+
+    %% S3 Storage
+    subgraph S3Storage["S3 Storage (STG)"]
+        original["Original Documents"]
+        sanitized["Sanitized Documents"]
+        embedded["Embedded Documents"]
+        index_collections["Index Collections"]
+        valid_index_collections["Valid Index Collections"]
+    end
+
+    %% Management Services
+    subgraph Management["Management Services (STG)"]
+        sync_mgmt_ui["Sync Management UI"]
+        sync_mgmt_api["Sync Management API"]
+        index_mgmt_ui["Index Management UI"]
+        index_mgmt_api["Index Management API"]
+        db["Relational Database\nSync & Index Status"]
+    end
+
+    %% Sync Jobs
+    subgraph SyncJobs["Sync Process (STG)"]
+        source_sync["SourceSync Job"]
+        doc_sanitizer["DocSanitizer Job"]
+        docs_embeddings["DocsEmbeddings Job"]
+        index_collector["IndexCollector Job"]
+        sync_watcher["SyncWatcher Job"]
+        storage_cleanup["StorageCleanup Job"]
+    end
+
+    %% Publishing Process
+    subgraph PublishSTG["Publish Process (STG)"]
+        index_creator_stg["IndexCreator Job"]
+        index_cleanup_stg["IndexCleanup Job"]
+        opensearch_stg["OpenSearch STG"]
+    end
+
+    subgraph PublishPROD["Publish Process (PROD)"]
+        index_creator_prod["IndexCreator Job"]
+        index_cleanup_prod["IndexCleanup Job"]
+        opensearch_prod["OpenSearch PROD"]
+    end
+
+    %% Monitoring
+    subgraph Monitoring["Monitoring"]
+        logs["ElasticSearch Logs"]
+        dashboards["Kibana/Grafana Dashboards"]
+        alerts["Alerts (Teams, Email)"]
+    end
+
+    %% Copilot
+    subgraph Copilot["Infinity AI Copilot"]
+        copilot_stg["Copilot STG"]
+        copilot_prod["Copilot PROD"]
+    end
+
+    %% Connections - Sources to Jobs
+    mitre --> source_sync
+    admin --> source_sync
+    sk --> source_sync
+    cpr --> source_sync
+    jira --> source_sync
+
+    %% Sync Process Flow
+    source_sync --> original
+    original --> doc_sanitizer
+    doc_sanitizer --> sanitized
+    sanitized --> docs_embeddings
+    docs_embeddings --> embedded
+    embedded --> index_collector
+    index_collector --> index_collections
+    sync_watcher -- "monitors" --> SyncJobs
+
+    %% Management Connections
+    sync_mgmt_ui <--> sync_mgmt_api
+    sync_mgmt_api <--> db
+    sync_mgmt_api -- "triggers" --> source_sync
+    sync_mgmt_api -- "triggers" --> doc_sanitizer
+    sync_mgmt_api -- "triggers" --> docs_embeddings
+    sync_mgmt_api -- "triggers" --> index_collector
+    storage_cleanup -- "cleans" --> S3Storage
+    
+    %% STG Index Management
+    index_mgmt_ui <--> index_mgmt_api
+    index_mgmt_api -- "manages" --> opensearch_stg
+    
+    %% Promote to Production
+    sync_mgmt_api -- "marks ready" --> valid_index_collections
+    index_collections -- "promoted to" --> valid_index_collections
+    
+    %% STG Index Creation
+    index_creator_stg -- "reads" --> index_collections
+    index_creator_stg -- "creates index" --> opensearch_stg
+    index_cleanup_stg -- "cleans" --> opensearch_stg
+    
+    %% PROD Index Creation
+    index_creator_prod -- "reads" --> valid_index_collections
+    index_creator_prod -- "creates index" --> opensearch_prod
+    index_cleanup_prod -- "cleans" --> opensearch_prod
+    
+    %% Copilot Usage
+    opensearch_stg <-- "vector search" --> copilot_stg
+    opensearch_prod <-- "vector search" --> copilot_prod
+    
+    %% Monitoring Connections
+    SyncJobs -- "logs" --> logs
+    PublishSTG -- "logs" --> logs
+    PublishPROD -- "logs" --> logs
+    Management -- "logs" --> logs
+    logs --> dashboards
+    dashboards -- "generates" --> alerts
