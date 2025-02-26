@@ -16,4 +16,8 @@ author = 22906253
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd apis/sync_management && python sync-management-api.py & cd ../../ui && node server.js"
+args = "cd apis/sync_management && python sync-management-api.py & cd /home/runner/workspace/ui && node server.js"
+
+[[ports]]
+localPort = 3000
+externalPort = 80
