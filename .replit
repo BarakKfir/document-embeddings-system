@@ -5,4 +5,15 @@ run = "run"
 channel = "stable-24_05"
 
 [deployment]
-run = ["sh", "-c", "run"]
+run = ["sh", "-c", "cd apis/sync_management && python sync-management-api.py & cd ui && node server.js"]
+
+[workflows]
+runButton = "Start Services"
+
+[[workflows.workflow]]
+name = "Start Services"
+author = 22906253
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd apis/sync_management && python sync-management-api.py & cd ../../ui && node server.js"
